@@ -1,8 +1,8 @@
 Package: kdd
-Title: What the Package Does (one line, title case)
+Title: Student performance prediction and Difficulty of problems
 Version: 0.0.0.9000
 Authors@R: person("First", "Last", email = "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+Description: The goal is to build a model which will predict the performance of a student which relates to the probability of getting the answers to a problem in the first attempt.
 Depends: R (>= 3.4.4)
 License: What license is it under?
 Encoding: UTF-8
