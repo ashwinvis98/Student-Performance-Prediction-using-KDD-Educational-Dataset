@@ -1,0 +1,162 @@
+---
+Title: "predictimg velocity of prediction"
+Author: "Hari Chandana"
+Date: "July 16, 2018"
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+#description
+This package predicts the velocity of progression given training data
+
+## 1. Dataset
+KDD dataset is used 
+https://pslcdatashop.web.cmu.edu/KDDCup/rules.jsp
+
+## 2.Model built: Decision tree:
+Decision trees implicitly perform feature selection
+To overcome scale differences between parameters
+Decision trees are also not sensitive to outliers since the splitting happens based on proportion of samples within the split ranges and not on absolute values. 
+
+## 3. Functions in package
+The kdd2 package consists of three functions
+###3a ppify.data
+This function preprocesses the kdd data
+```{r}
+
+ppify.data = function(raw.data = "/usr/local/src/app/modified_kddv2.csv",
+                      preprocessed.file = "/usr/local/src/app/kddv2.csv"){
+
+  #raw.data = read_csv("E:/bitwise/modified_kddv2.csv")
+ 
+  #loading required libraries
+  require(pracma)
+  require(dplyr)
+  require(jsonlite)
+  
+  # raw.data can either be csv file or json input data.
+  newdata = if(is.character(raw.data) && file.exists(raw.data)){
+    read.csv(raw.data, sep = ',', header = T)
+  }	else{
+    as.data.frame(raw.data)
+  }
+  
+  #assigning newdata to kdd
+  kdd<-newdata
+
+  #converting follwing variables to factor variables
+  kdd$Problem.Name=as.factor(kdd$Problem.Name)
+  kdd$Anon.Student.Id=as.factor(kdd$Anon.Student.Id)
+  
+  #creating new attributes
+  oppskills=kdd$Opportunity.SubSkills.+kdd$Opportunity.KTracedSkills.
+  countskills=kdd$Count.KTracedSkills.+kdd$Count.SubSkills.
+  
+  #binding them to the dataframe
+  kdd<-cbind(kdd,oppskills)
+  kdd<-cbind(kdd,countskills)
+  
+  #selecting required attributes
+  kdd<- kdd[c("Anon.Student.Id","Subject", "Step.Duration..sec.","Correct.First.Attempt","oppskills","countskills","Hints","Problem.View")]
+
+  #summary(newdata$oppskills)
+
+  #creating new attribute diff by dividing it into intervals based on quartile
+  diff <- cut(kdd$oppskills,c(0,20,92,179.6,250),include.lowest = TRUE,labels=c("1","2","3","4"))
+  diff<-as.numeric(diff)
+  kdd<-cbind(kdd,diff)
+ 
+  #Percentage of Correct first attemps upto now (excluding the current row)
+  kdd$EWMA_assess = 0 
+  kdd$MA_session = 0
+  # Velocity of Progression of a student
+  kdd$vop = 0
+  genpop_mean<-mean(kdd$Step.Duration..sec.)
+  
+
+  studentid <- array(unique(kdd$Anon.Student.Id))
+  
+  # Finding the exponentially weighted moving average of the assessment score
+  for (num_i in 1:length(studentid)){
+      # Assigning the value of window based on condition
+      window = 3
+      min_window=2
+      if(nrow(kdd[kdd$Anon.Student.Id == studentid[num_i], ]) > window &
+         nrow(kdd[kdd$Anon.Student.Id == studentid[num_i], ]) < min_window){
+        window = nrow(kdd[kdd$Anon.Student.Id == studentid[num_i] , ])
+      } else if(nrow(kdd[kdd$Anon.Student.Id == studentid[num_i] , ]) <= min_window){
+        window = 1 # Single Entry or window size data length Flag
+      }
+      if (window > 1) {
+        kdd[kdd$Anon.Student.Id == studentid[num_i] ,
+                c("Step.Duration..sec.", "Correct.First.Attempt", "MA_session", "EWMA_assess")] <-
+          within(kdd[kdd$Anon.Student.Id == studentid[num_i] ,
+                         c("Step.Duration..sec.", "Correct.First.Attempt", "MA_session", "EWMA_assess")],
+                 { EWMA_assess <- pracma::movavg(Correct.First.Attempt, window, type='e'); # calculate  EWMA for each row from the past 3 rows
+               MA_session <- dplyr::cummean(Step.Duration..sec.)  }    )
+      } else {
+        kdd[kdd$Anon.Student.Id == studentid[num_i] ,
+                c("Step.Duration..sec.", "Correct.First.Attempt", "MA_session", "EWMA_assess")] <-
+          within(kdd[kdd$Anon.Student.Id == studentid[num_i],
+                         c("Step.Duration..sec.", "Correct.First.Attempt", "MA_session", "EWMA_assess")],
+                 { EWMA_assess <- mean(Correct.First.Attempt); # For single entry, we pass them as it is   same as above
+                MA_session <- mean(Step.Duration..sec.) })
+     }
+
+}
+
+
+```
+This function is used to preprocess the kdd dataset.
+We assigned value to window based on condition and then defined new attributes EWMA_assess(Percentage of correct first attemps till now,wxcluding the correct row),MA_session.
+We defined the value of Vop(velocity of progression)
+This function saves the preprocessed file
+
+###3b buildmodel
+```{r}
+buildmodel=function(save.model="/usr/local/src/app/kddmodel.rds"){
+  #loading required libraries
+  #library(reshape2)
+  library(jsonlite)
+  library(mongolite)
+  library(data.table)
+  library(tidyr)
+  #creation of mongo connection object that connects to collection kdd2 in database chandana_test
+  conn <- mongo(collection = "kdd2", db = "chandana_test", url = "mongodb://admin:bitwise2017@13.78.179.80:27017/admin",verbose = TRUE)
+  alldata<-conn$find('{}')#empty querying to import the data 
+  dt<-data.table(alldata)
+  #creating a vector with attribute names
+  cols <- c("Hints","countskills","diff","MA_session","EWMA_assess","vop")
+  #using separate_rows to split the data
+  dt<-tidyr::separate_rows(dt,cols[1:6])
+  dt1<-dt[!dt$Hints == "", ]#cleaning the data
+  dt2<-dt1[!dt1$Hints == "c", ]
+  library(rpart)
+  
+  #building the decision regression tree
+  model2<- rpart(vop~ Hints+countskills+diff+MA_session+EWMA_assess, data = dt2,method = "anova")
+  saveRDS(model2,save.model )#save the model
+}
+
+```
+This function imports the data from mongodb using mongo connection object conn and then builds the decision regression tree
+Then, it saves the model
+
+###3c predict.data
+```{r}
+
+predict.data = function(input,save.model="/usr/local/src/app/kddmodel.rds"){
+
+  # raw.data can either be csv file or json input data.
+  newdata = if(is.character(input) && file.exists(input)){
+    read.csv(input, sep = ',', header = T)
+  }       else{
+    as.data.frame(input)
+  }
+  model2=readRDS(file=save.model)#load the model
+  predicttrain2=predict(model2,newdata)
+  return(predicttrain2)
+}
+
+```
+This function loads the saved model and predicts the outputs
