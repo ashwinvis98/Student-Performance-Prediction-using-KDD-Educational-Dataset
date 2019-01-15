@@ -1,7 +1,7 @@
 Package: kdd
 Title: Student performance prediction and Difficulty of problems
 Version: 0.0.0.9000
-Authors@R: person("First", "Last", email = "first.last@example.com", role = c("aut", "cre"))
+Authors@R: person("Ashwin", "V", email = "ashwinvis98@gmail.com", role = c("aut", "cre"))
 Description: The goal is to build a model which will predict the performance of a student which relates to the probability of getting the answers to a problem in the first attempt.
 Depends: R (>= 3.4.4)
 License: What license is it under?
