@@ -1,0 +1,1 @@
+Consists of all the codes that was written to build the package 'KDD' from scratch which involves data preprocessing, uploading working data into a MongoDB repository, building the models required, building the final package with optimizations and running few test cases. 
